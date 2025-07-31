@@ -1,0 +1,57 @@
+name: FSCSR_SRx4
+model_type: FSCSRModel
+scale: 4
+num_gpu: 1  # set num_gpu: 0 for cpu mode
+manual_seed: 0
+
+datasets:
+  test_1:  # the 1st test dataset
+    name: Set410
+    type: PairedImageDataset
+    dataroot_gt: D:/SuperResolution/SRFBN/SRFBN_CVPR19-master/results/HR/Set410
+    dataroot_lq: D:/SuperResolution/SRFBN/SRFBN_CVPR19-master/results/LR/LRBI/Set410X4
+    io_backend:
+      type: disk
+
+
+
+# network structures
+network_g:
+  type: FSCSR
+  upscale: 4
+  in_chans: 3
+  img_size: 48
+  window_size: 16
+  compress_ratio: 3
+  squeeze_factor: 30
+  conv_scale: 0.01
+  overlap_ratio: 0.5
+  img_range: 1.
+  depths: [6, 6, 6, 6, 6, 6]
+  embed_dim: 180
+  num_heads: [6, 6, 6, 6, 6, 6]
+  mlp_ratio: 2
+  upsampler: 'pixelshuffle'
+  resi_connection: '1conv'
+
+
+# path
+path:
+  pretrain_network_g: ./experiments/train_FSCSR_SRx4_from_scratch/models/net_g_2000.pth
+  strict_load_g: true
+  param_key_g: 'params_ema'
+
+# validation settings
+val:
+  save_img: true
+  suffix: ~  # add suffix to saved images, if None, use exp name
+
+  metrics:
+    psnr: # metric name, can be arbitrary
+      type: calculate_psnr
+      crop_border: 4
+      test_y_channel: true
+    ssim:
+      type: calculate_ssim
+      crop_border: 4
+      test_y_channel: true
