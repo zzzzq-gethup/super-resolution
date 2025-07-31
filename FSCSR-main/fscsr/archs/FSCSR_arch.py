@@ -16,60 +16,42 @@ import torch.nn.functional as F
 
 class ALC(nn.Module):
     def __init__(self, in_channels):
-        """
-        高效拉普拉斯增强模块
-        结合了拉普拉斯先验和自适应学习能力，同时保持计算效率
 
-        参数:
-            in_channels: 输入通道数
-        """
         super(ALC, self).__init__()
 
-        # 可学习的拉普拉斯核作为先验知识
+      
         self.laplacian_kernel = nn.Parameter(torch.tensor(
             [[0, -1, 0], [-1, 4, -1], [0, -1, 0]],
             dtype=torch.float32, requires_grad=True).view(1, 1, 3, 3))
 
-        # 轻量级高频提取网络 (与HighFrequencyEnhancer类似的计算量)
+       
         self.hf_extractor = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, 3, padding=1),
             nn.GELU(),
             nn.Conv2d(in_channels, in_channels, 3, padding=1)
         )
 
-        # 初始化最后层权重为零，确保训练稳定
+        
         self.hf_extractor[-1].weight.data.zero_()
         self.hf_extractor[-1].bias.data.zero_()
 
-        # 自适应融合参数
+
         self.blpha = nn.Parameter(torch.tensor(0.1))
         self.alpha = nn.Parameter(torch.tensor(0.1))
 
-        # 特征细化层 (可选)
         self.refine = nn.Conv2d(in_channels, in_channels, 1)
 
     def forward(self, x):
-        """
-        前向传播:
-        1. 提取拉普拉斯高频分量
-        2. 学习自适应高频分量
-        3. 融合两种高频信息
-        4. 残差连接增强
-        """
-        # 1. 拉普拉斯高频分量提取
+
         laplacian_kernels = self.laplacian_kernel.repeat(x.size(1), 1, 1, 1)
         laplacian_hf = F.conv2d(x, laplacian_kernels, padding=1, groups=x.size(1))
 
-        # 2. 自适应高频分量学习
         learned_hf = self.hf_extractor(x)
 
-        # 3. 融合两种高频信息
         combined_hf = laplacian_hf * self.blpha + learned_hf
 
-        # 4. 残差连接增强
         enhanced = x + self.alpha * combined_hf
 
-        # 特征细化
         return self.refine(enhanced)
 
 class DDG(nn.Module):
@@ -126,12 +108,10 @@ class DDG(nn.Module):
 
         x_trans = self.post_hf_enhancer(x_trans)
 
-        with torch.no_grad():  # 限制梯度反传
+        with torch.no_grad():  
             x_fdb = self.freq_processor(x)
 
         gated_fused = self.s_ffusion(x_fdb, x_trans)
-
-
 
         return gated_fused
 
@@ -140,20 +120,14 @@ class FusionCF(nn.Module):
     def __init__(self, channels):
         super().__init__()
 
-        # 特征融合层（带残差连接）
+       
         self.conv1 = nn.Sequential(
             nn.Conv2d(channels * 2, 2, 3, padding=1),
             nn.Softmax(dim=1)
         )
 
     def forward(self, feat_trans, feat_cnn):
-        """
-        输入:
-            feat_trans: [B,C,H,W] Transformer特征（全局信息）
-            feat_cnn: [B,C,H,W] CNN特征（局部细节）
-        输出: [B,C,H,W] 融合特征
-        """
-        # 通道级融合
+
         combined = torch.cat([feat_trans, feat_cnn], dim=1)  # [B,2C,H,W]
         x = self.conv1(combined)
         w_tf, w_cnn = x.chunk(2, dim=1)
@@ -166,17 +140,17 @@ class FSILB(nn.Module):
         super().__init__()
 
         self.fusex = fusex
-        # 两个 Conv 模块
+       
         self.conv1 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
         self.conv2 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
 
-        # 两个 FSCA 模块
+       
         self.FSCA1 = FSCA(out_channels)
         self.FSCA2 = FSCA(out_channels)
 
         self.fuse1 = FusionCF(out_channels)
         self.fuse2 = FusionCF(out_channels)
-        # Concatenate 后的处理模块
+        
         self.concat_conv = nn.Conv2d(out_channels * 2, out_channels, 1)
         self.sigmoid = nn.Sigmoid()
         self.split = nn.Conv2d(out_channels, 2, 1)
@@ -188,10 +162,8 @@ class FSILB(nn.Module):
         x1 = self.conv1(x1)
         x2 = self.conv2(x2)
         if self.fusex == "fsca":
-            print("zzzzzzzzzzzqeqe")
             out1 = self.FSCA1(x1, x2)
             out2 = self.FSCA2(x2, x1)
-            print("zzzzzzzzzzzqe313131")
         else:
             out1 = self.fuse1(x1, x2)
             out2 = self.fuse2(x2, x1)
@@ -205,13 +177,13 @@ class FSILB(nn.Module):
         out2_masked = out2 * mask2
         final_out = out1_masked + out2_masked
 
-        return  final_out*self.alpha +xx
+        return final_out*self.alpha + xx
 
 class FSCA(nn.Module):
     def __init__(self, channels):
         super().__init__()
 
-        # Q生成路径（XH分支）
+
         self.q_conv = nn.Sequential(
             nn.Conv2d(channels, channels, 1),
             nn.BatchNorm2d(channels),
@@ -221,7 +193,6 @@ class FSCA(nn.Module):
             nn.ReLU()
         )
 
-        # K生成路径（XH分支）
         self.k_conv = nn.Sequential(
             nn.Conv2d(channels, channels, 1),
             nn.BatchNorm2d(channels),
@@ -231,7 +202,6 @@ class FSCA(nn.Module):
             nn.ReLU()
         )
 
-        # V生成路径（XS分支）
         self.v_conv = nn.Sequential(
             nn.Conv2d(channels, channels, 1),
             nn.BatchNorm2d(channels),
@@ -241,30 +211,26 @@ class FSCA(nn.Module):
             nn.ReLU()
         )
 
-        # 输出卷积
         self.out_conv = nn.Conv2d(channels, channels, 1)
 
     def forward(self, xh, xs):
-        # 生成Q, K, V
         Q = self.q_conv(xh)
         K = self.k_conv(xh)
         V = self.v_conv(xs)
 
-        # 调整维度用于注意力计算
         B, C, H, W = Q.shape
         Q = Q.view(B, C, -1).permute(0, 2, 1)  # [B, HW, C]
         K = K.view(B, C, -1)  # [B, C, HW]
         V = V.view(B, C, -1).permute(0, 2, 1)  # [B, HW, C]
 
-        # 计算注意力权重
+
         attn_weights = torch.matmul(Q, K) / (C ** 0.5)
         attn_weights = F.softmax(attn_weights, dim=-1)
 
-        # 应用注意力到V
+
         attn_output = torch.matmul(attn_weights, V).permute(0, 2, 1)
         attn_output = attn_output.view(B, C, H, W)
 
-        # 最终输出
         output = self.out_conv(attn_output) + xh
         return output
 
@@ -274,7 +240,7 @@ class FDB(nn.Module):
         super().__init__()
         self.in_channels = in_channels
 
-        # P分支 (相位分支) - 添加批量归一化
+
         self.p_branch = nn.Sequential(
             nn.Conv2d(2 * in_channels, 128, 3, padding=1),
             nn.BatchNorm2d(128),
@@ -283,7 +249,7 @@ class FDB(nn.Module):
             nn.BatchNorm2d(in_channels)
         )
 
-        # A分支 (振幅分支) - 使用更高效的分组卷积
+
         self.a_branch = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, 3, padding=1, groups=in_channels),  # 深度卷积
             nn.BatchNorm2d(in_channels),
@@ -292,25 +258,24 @@ class FDB(nn.Module):
             nn.BatchNorm2d(in_channels)
         )
 
-        # 多尺度复数卷积
+
         self.multi_scale = nn.ModuleList([
             ComplexConv2d(in_channels, in_channels // 2, 3),
             ComplexConv2d(in_channels, in_channels // 2, 5)
         ])
 
-        # 后处理模块 - 更高效的深度可分离卷积
+
         self.post_conv = nn.Sequential(
             nn.Conv2d(in_channels, 128, 1),
             nn.BatchNorm2d(128),
             nn.PReLU(),
-            # 深度可分离卷积分解
             nn.Conv2d(128, 128, 3, padding=1, groups=128),  # 深度卷积
             nn.Conv2d(128, 256, 1),  # 点卷积
             nn.BatchNorm2d(256),
             nn.PReLU()
         )
 
-        # 最终调制层 - 添加残差连接
+
         self.final = nn.Sequential(
             nn.Conv2d(256, in_channels, 1),
             nn.Sigmoid()
@@ -320,42 +285,34 @@ class FDB(nn.Module):
         B, C, H, W = x.shape
         identity = x
 
-        # FFT变换
-        with torch.cuda.amp.autocast(enabled=False):  # 防止半精度问题
+
+        with torch.cuda.amp.autocast(enabled=False):  
             fft = torch.fft.rfft2(x, norm='ortho')
             real, imag = fft.real, fft.imag
 
-        # 相位分支处理
         p_out = self.p_branch(torch.cat([real, imag], dim=1))
 
-        # 振幅分支处理
         a_input = torch.sqrt(real.square() + imag.square() + 1e-6)
         a_out = self.a_branch(a_input)
 
-        # 多尺度复数卷积
         real1, imag1 = self.multi_scale[0](p_out, a_out)
         real2, imag2 = self.multi_scale[1](p_out, a_out)
         real = torch.cat([real1, real2], dim=1)
         imag = torch.cat([imag1, imag2], dim=1)
 
-        # 特征融合
+
         mag = torch.sqrt(real.square() + imag.square() + 1e-6)
         x = self.post_conv(mag)
 
-        # 生成调制掩码并应用
         mask = self.final(x)
 
-        # 应用调制并逆变换
         with torch.cuda.amp.autocast(enabled=False):
-            # 掩码应用
             modulated_real = real * mask
             modulated_imag = imag * mask
 
-            # 逆FFT
             complex_tensor = torch.complex(modulated_real, modulated_imag)
             restored = torch.fft.irfft2(complex_tensor, s=(H, W), norm='ortho')
 
-        # 添加残差连接
         return restored + identity
 
 
@@ -374,56 +331,6 @@ class ComplexConv2d(nn.Module):
         real_part = self.real_conv(x_real) - self.imag_conv(x_imag)
         imag_part = self.real_conv(x_imag) + self.imag_conv(x_real)
         return real_part, imag_part
-
-
-class WeightedFusion(nn.Module):
-    def __init__(self, num_bands):
-        super().__init__()
-        # 初始化权重参数（默认等权重）
-        self.weights = nn.Parameter(torch.ones(num_bands) / num_bands)
-
-    def forward(self, processed_bands):
-        # 确保权重和为1（可选）
-        normalized_weights = torch.softmax(self.weights, dim=0)
-        # 加权融合 [N, C, H, W] * [N] -> [C, H, W]
-        combined = sum(w * band for w, band in zip(normalized_weights, processed_bands))
-        return combined
-
-class LightCrossAttention(nn.Module):
-    def __init__(self, dim, reduction_ratio=9):
-        super().__init__()
-        self.reduction = nn.Sequential(
-            nn.Linear(dim, dim // reduction_ratio),
-            nn.GELU()
-        )
-
-        self.spatial_proj = nn.Sequential(
-            nn.Linear(dim, dim // reduction_ratio),
-            nn.GELU(),
-            nn.Linear(dim // reduction_ratio, dim)
-        )
-        self.freq_proj = nn.Sequential(
-            nn.Linear(dim, dim // reduction_ratio),
-            nn.GELU(),
-            nn.Linear(dim // reduction_ratio, dim)
-        )
-
-    def forward(self, spatial, freq):
-        spatial_red = self.reduction(spatial)
-        freq_red = self.reduction(freq)
-        attn = torch.einsum('bic,bjc->bij', spatial_red, freq_red)
-        attn = F.softmax(attn, dim=-1)
-        fused_spatial = torch.einsum('bij,bjc->bic', attn, freq)
-        fused_freq = torch.einsum('bij,bjc->bic', attn.transpose(1, 2), spatial)
-        a = self.spatial_proj(fused_spatial)
-        b = self.freq_proj(fused_freq)
-        return a + b
-
-
-
-
-
-
 
 
 def drop_path(x, drop_prob: float = 0., training: bool = False):
@@ -661,7 +568,7 @@ class SDRCAB(nn.Module):
                  drop, attn_drop, drop_path, norm_layer, gc, patch_size, img_size):
         super(SDRCAB, self).__init__()
 
-        self.swin1 = SwinTransformerBlock(dim=dim, input_resolution=input_resolution,
+        self.swin1 = HAB(dim=dim, input_resolution=input_resolution,
                                           num_heads=num_heads, window_size=window_size,
                                           shift_size=0,  # For first block
                                           mlp_ratio=mlp_ratio,
@@ -672,7 +579,7 @@ class SDRCAB(nn.Module):
         self.se1 = ChannelAdjust(dim)
         self.adjust1 = nn.Conv2d(dim, gc, 1)
 
-        self.swin2 = SwinTransformerBlock(dim + gc, input_resolution=input_resolution,
+        self.swin2 = HAB(dim + gc, input_resolution=input_resolution,
                                           num_heads=num_heads - ((dim + gc) % num_heads), window_size=window_size,
                                           shift_size=window_size // 2,  # For first block
                                           mlp_ratio=mlp_ratio,
@@ -683,7 +590,7 @@ class SDRCAB(nn.Module):
         self.se2 = ChannelAdjust(dim + gc)
         self.adjust2 = nn.Conv2d(dim + gc, gc, 1)
 
-        self.swin3 = SwinTransformerBlock(dim + 2 * gc, input_resolution=input_resolution,
+        self.swin3 = HAB(dim + 2 * gc, input_resolution=input_resolution,
                                           num_heads=num_heads - ((dim + 2 * gc) % num_heads), window_size=window_size,
                                           shift_size=0,  # For first block
                                           mlp_ratio=mlp_ratio,
@@ -694,7 +601,7 @@ class SDRCAB(nn.Module):
         self.se3 = ChannelAdjust(dim + gc * 2)
         self.adjust3 = nn.Conv2d(dim + gc * 2, gc, 1)
 
-        self.swin4 = SwinTransformerBlock(dim + 3 * gc, input_resolution=input_resolution,
+        self.swin4 = HAB(dim + 3 * gc, input_resolution=input_resolution,
                                           num_heads=num_heads - ((dim + 3 * gc) % num_heads), window_size=window_size,
                                           shift_size=8,  # For first block
                                           mlp_ratio=1,
@@ -705,7 +612,7 @@ class SDRCAB(nn.Module):
         self.se4 = ChannelAdjust(dim + gc * 3)
         self.adjust4 = nn.Conv2d(dim + gc * 3, gc, 1)
 
-        self.swin5 = SwinTransformerBlock(dim + 4 * gc, input_resolution=input_resolution,
+        self.swin5 = HAB(dim + 4 * gc, input_resolution=input_resolution,
                                           num_heads=num_heads - ((dim + 4 * gc) % num_heads), window_size=window_size,
                                           shift_size=0,  # For first block
                                           mlp_ratio=1,
@@ -737,7 +644,7 @@ class SDRCAB(nn.Module):
         return x5 * 0.2 + x
 
 
-class SwinTransformerBlock(nn.Module):
+class HAB(nn.Module):
     r""" Swin Transformer Block.
     Args:
         dim (int): Number of input channels.
@@ -1063,63 +970,6 @@ class Upsample(nn.Sequential):
         super(Upsample, self).__init__(*m)
 
 
-class DualGateFusion(nn.Module):
-    """双重门控融合模块，包含空间门控和通道门控"""
-
-    def __init__(self, channels, reduction_ratio=8):
-        super().__init__()
-
-        # 空间门控（关注特征空间重要性）
-        self.spatial_gate = nn.Sequential(
-            # 联合使用平均池和最大池
-            nn.Conv2d(2, 1, 7, padding=3, bias=False),
-            nn.BatchNorm2d(1),
-            nn.Sigmoid()
-        )
-
-        # 通道门控（动态调整通道权重）
-        self.channel_gate = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(channels * 2, channels // reduction_ratio, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(channels // reduction_ratio, channels * 2, 1),
-            nn.Sigmoid()
-        )
-
-        # 特征融合层（带残差连接）
-        self.fusion_conv = nn.Sequential(
-            nn.Conv2d(channels * 2, channels, 3, padding=1),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(channels, channels, 1)
-        )
-
-    def forward(self, feat_trans, feat_cnn):
-        """
-        输入:
-            feat_trans: [B,C,H,W] Transformer特征（全局信息）
-            feat_cnn: [B,C,H,W] CNN特征（局部细节）
-        输出: [B,C,H,W] 融合特征
-        """
-        # 通道级融合
-        combined = torch.cat([feat_trans, feat_cnn], dim=1)  # [B,2C,H,W]
-
-        # 通道门控
-        channel_attn = self.channel_gate(combined)  # [B,2C,1,1]
-        c_attn_trans, c_attn_cnn = channel_attn.chunk(2, dim=1)
-        weighted_trans = feat_trans * c_attn_trans
-        weighted_cnn = feat_cnn * c_attn_cnn
-
-        # 空间门控（基于CNN特征生成空间权重）
-        spatial_avg = torch.mean(weighted_cnn, dim=1, keepdim=True)  # [B,1,H,W]
-        spatial_max, _ = torch.max(weighted_cnn, dim=1, keepdim=True)  # [B,1,H,W]
-        spatial_attn = self.spatial_gate(torch.cat([spatial_avg, spatial_max], dim=1))  # [B,1,H,W]
-
-        # 门控融合
-        gated_trans = weighted_trans * spatial_attn  # 空间权重调整
-        fused = self.fusion_conv(torch.cat([gated_trans, weighted_cnn], dim=1))
-
-        # 残差连接
-        return fused + feat_cnn  # 保留原始CNN特征
 
 @ARCH_REGISTRY.register()
 class FSCSR(nn.Module):
@@ -1183,14 +1033,7 @@ class FSCSR(nn.Module):
         self.num_features = embed_dim
         self.mlp_ratio = mlp_ratio
 
-        # self.fusion = DualGateFusion(embed_dim)
 
-        # self.freq_fusion = nn.Sequential(
-        #     nn.Conv2d(2 * embed_dim, embed_dim // 8, 1),
-        #     nn.LeakyReLU(0.2),
-        #     nn.Conv2d(embed_dim // 8, 2, 1),
-        #     nn.Softmax(dim=1)
-        # )
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
