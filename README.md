@@ -12,7 +12,6 @@ python fscsr/test.py -opt options/test/fscsr_SRx4_ImageNet-pretrain.yml
 
 The testing results will be saved in the `./results` folder.  
 
-- Refer to `./options/test/fscsr_SRx4_ImageNet-LR.yml` for **inference** without the ground truth image.
 
 ## How To Train
 
