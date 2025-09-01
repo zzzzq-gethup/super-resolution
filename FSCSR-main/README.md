@@ -7,7 +7,7 @@
 - Then run the following codes (taking FSCSR_SRx4_ImageNet-pretrain.pth` as an example):
 
 ```
-python fscsr/test.py -opt options/test/fscsr_SRx4_ImageNet-pretrain.yml
+python fscsr/test.py -opt options/test/FSCSR_SRx4_ImageNet-pretrain.yml
 ```
 
 The testing results will be saved in the `./results` folder.  
@@ -21,7 +21,7 @@ The testing results will be saved in the `./results` folder.
 - The training command is like
 
 ```
- python fscsr/train.py -opt options/train/train_fscsr_SRx4_from_scratch.yml 
+ python fscsr/train.py -opt options/train/train_FSCSR_SRx4_from_scratch.yml 
 ```
 
 The training logs and weights will be saved in the `./experiments` folder.
